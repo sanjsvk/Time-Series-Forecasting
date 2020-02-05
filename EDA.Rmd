@@ -1,0 +1,183 @@
+---
+title: "project"
+author: "Sanjan Vijayakumar"
+date: "15/11/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(readr)
+library(dplyr)
+library(lubridate)
+library(zoo)
+```
+
+```{r}
+metadata <- read.csv("C:\\Users\\Sanjan\\Desktop\\Ashrae data\\building_metadata.csv",na="NA")
+metadata1<-metadata
+weather_train <- read.csv("C:\\Users\\Sanjan\\Desktop\\Ashrae data\\weather_train.csv")
+train <- read.csv("C:\\Users\\Sanjan\\Desktop\\Ashrae data\\train.csv")
+```
+
+```{r}
+colSums(is.na(combine_train))
+
+for (i in colnames(combine_train)) {
+  print((sum(is.na(combine_train$i) == TRUE) / nrow(combine_train))*100)
+}
+sum(is.na(combine_train$floor_count) == TRUE) / nrow(combine_train)
+nrow(combine_train)
+```
+
+```{r}
+combine_train <- train %>%
+  left_join(metadata, by = "building_id") %>%
+  left_join(weather_train, by = c("site_id", "timestamp"))
+
+#median(combine_train$year_built,na.rm = TRUE)
+```
+
+```{r}
+#write.csv(combine_train, "combine_train.csv")
+```
+
+```{r}
+#splitting timestamp to separate columns
+combine_train <- combine_train %>% 
+  mutate(timestamp_date = ymd(gsub( " .*$", "", timestamp)),
+         timestamp_month = month(timestamp_date),
+         timestamp_day = wday(timestamp_date, label = T, abbr = T),
+         timestamp_day_number = day(timestamp_date),
+         time_ymd_hms = ymd_hms(timestamp),
+         time_hour = hour(time_ymd_hms))
+```
+
+```{r}
+var(combine_train$square_feet,combine_train$floor_count,na.rm=TRUE)
+```
+
+```{r}
+#density plot to show energy consumption by each type of meter
+combine_train %>% 
+  ggplot(aes(x= log(meter_reading + 1), fill = as.character(meter)))+
+  geom_density(alpha = 0.5, adjust = 2) +
+  ggtitle("EFFICIENCY OF DIFFERENT METERS") +
+  labs(x= "log(Meter Reading)") +
+  scale_fill_discrete(name = "Meter Types", labels = c("Electricity", "Chilled Water", "Steam", "Hot Water"))
+```
+
+
+```{r}
+#boxplot of energy consumption per day
+combine_train %>% 
+  ggplot(aes(x= timestamp_day, y= log(meter_reading + 1))) + 
+  geom_boxplot(alpha = 0.5) + 
+  coord_flip() +
+  ggtitle("ENERGY CONSUMPTION FOR EACH DAY OF THE WEEK") + 
+  labs(x= "Meter Reading", y="Days of the week") 
+```
+
+```{r}
+#energy consumption within durations of a day
+combine_train %>% 
+  group_by(time_hour) %>% 
+  summarise(median_reading = median(meter_reading, na.rm = TRUE)) %>% 
+  ggplot(aes(x= time_hour, y= median_reading)) +
+  geom_line(size = 1) +
+  ggtitle("METER READINGS DURING THE DAY") +
+  labs(x= "Hour", y= "Median Reading")
+```
+
+```{r}
+#Energy consumed by different types of buildings
+combine_train %>% 
+  ggplot(aes(x= as.character(primary_use), y= log(meter_reading + 1))) +
+  geom_boxplot() +
+  ggtitle("READINGS FOR DIFFERENT TYPES OF BUILDINGS")
+  labs(x= "Types of Buildings", y= "Meter Reading") +
+    coord_flip()
+```
+
+```{r}
+combine_train %>% 
+  group_by(timestamp_date) %>% 
+  summarise(median_reading = median(meter_reading, na.rm = TRUE)) %>% 
+  ggplot(aes(x= timestamp_date, y= median_reading)) +
+  geom_line(colour = "#ecbb45") +
+  geom_smooth(se = FALSE) +
+  ggtitle("READINGS THROUGHOUT THE YEAR") +
+  labs(x= "Reading Date", y= "Median Reading")
+```
+
+```{r}
+#Individual meter readings throughout the year
+months <- combine_train %>%
+  select(timestamp_month, meter, meter_reading) %>%
+  group_by(timestamp_month, meter) %>%
+  summarise(avg_meter = median(meter_reading)) %>%
+  arrange(meter)
+
+months %>%
+  ggplot(aes(timestamp_month, avg_meter, group = 1, color = as.factor(meter))) +
+  geom_point(stat='summary', fun.y=sum) +
+  stat_summary(fun.y=sum, geom="line") +
+  xlab("Months") +
+  ylab("Average Meter Reading (kWh)") +
+  ggtitle("AVERAGE METER READINGS THROUGHOUT THE YEAR") +
+  facet_wrap(~meter) +
+  scale_color_discrete(name = "Meter Types", labels = c("Electricity", "Chilled Water", "Steam", "Hot Water"))
+```
+
+```{r}
+#Meter readings hourly
+hours <- combine_train %>%
+  select(time_hour, meter, meter_reading) %>%
+  group_by(time_hour, meter) %>%
+  summarise(avg_meter = median(meter_reading)) %>%
+  arrange(meter)
+
+hours %>%
+  ggplot(aes(time_hour, avg_meter, group = 1, color = as.factor(meter))) +
+  geom_point(stat='summary', fun.y=sum) +
+  stat_summary(fun.y=sum, geom="line") +
+  xlab("Hourly") +
+  ylab("Average Meter Reading (kWh)") +
+  ggtitle("Average Meter Readings Throughout the Day") +
+  facet_wrap(~meter)
+```
+
+```{r}
+combine_train %>%
+  mutate(roll= rollapply(meter_reading,2, mean, na.rm=TRUE))
+```
+
+```{r}
+combine_train%>%
+  group_by(site_id) %>%
+  summarise(avvg = mean(year_built,na.rm=TRUE))
+
+mean(na.rm=TRUE) 
+```
+
+
+```{r}
+x1<-combine_train %>%
+  select(-floor_count,-year_built) %>%
+  filter(meter == "0") %>%
+  filter(building_id == "0")
+```
+
+```{r}
+write.csv(x1, "x1.csv")
+```
+
+```{r}
+train[train$building_id == "887"]
+#train$meter_reading[1098]
+```
